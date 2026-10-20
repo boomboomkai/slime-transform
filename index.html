@@ -478,7 +478,7 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;image-rendering:pix
         <label class="row"><input type="checkbox" id="sndOn"> 開啟聲音</label>
         <label for="volBgm">背景音樂音量<input type="range" id="volBgm" min="0" max="100" step="5"></label>
         <label for="volSfx">打怪音效音量<input type="range" id="volSfx" min="0" max="100" step="5"></label>
-        <div class="sub" id="verTxt">遊戲版本：2026.10.20-b（含戰力系統與紅點提示）</div>
+        <div class="sub" id="verTxt">遊戲版本：2026.10.21-a（修正新玩家進傳送門卡住）</div>
         <div class="row" id="resetRow"><button id="resetBtn" class="danger">重新開始</button></div>
         <div class="keys">
           <b style="color:var(--ink);font-weight:400">手機</b>：左半邊拖曳移動，按住「攻擊」連續攻擊，點技能施放。建議橫向遊玩。<br>
@@ -2786,7 +2786,7 @@ function bindReset(){
   $('resetBtn').onclick=()=>{
     $('resetRow').innerHTML='<span>確定要清除所有進度？</span><button id="rYes" class="danger">清除並重來</button><button id="rNo">取消</button>';
     $('rNo').onclick=bindReset;
-    $('rYes').onclick=()=>{S=freshState();try{localStorage.removeItem(SAVE_KEY);}catch(e){}CH.length=0;curChap=-1;useChapter(0);resetPlayer();monsters=[];drops=[];lastZone=-1;projs=[];renderPotions();allies=[];meteors=[];timers=[];populate();$('testMode').value='1';setAuto(false);renderSkillbar();renderCards();bindReset();closeSheets();toast('已重新開始','blue');};
+    $('rYes').onclick=()=>{S=migrate(freshState());try{localStorage.removeItem(SAVE_KEY);}catch(e){}CH.length=0;curChap=-1;useChapter(0);resetPlayer();monsters=[];drops=[];lastZone=-1;projs=[];renderPotions();allies=[];meteors=[];timers=[];populate();$('testMode').value='1';setAuto(false);renderSkillbar();renderCards();bindReset();closeSheets();toast('已重新開始','blue');};
   };
 }
 
@@ -2803,6 +2803,7 @@ function frame(t){
 }
 function start(data){
   if(data&&data.S){S=migrate(data.S);}else load();
+  S=migrate(S); // 新玩家也補齊所有欄位
   for(const f in S.loadouts) sanitizeLoadout(f);
   if(S.chap>0&&!zoneOpen(S.chap)) S.chap=0;
   useChapter(S.chap||0);
