@@ -2150,10 +2150,10 @@ function update(dt){
 }
 
 // ====== 繪圖 ======
-const cv=document.getElementById('game'),ctx=cv.getContext('2d');
+let cv=document.getElementById('game'),ctx=cv.getContext('2d');
 let scale=1;
 function resize(){
-  const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
+  const r=cv.getBoundingClientRect(),dpr=Math.min(2,window.devicePixelRatio||1); // 解析度上限，避免手機記憶體不足而黑畫面
   if(!r.width||!r.height) return;
   const asp=r.width/r.height, BASE=r.width<700&&r.height<700?190:220; // 較短的一邊顯示約 190–220 像素
   if(asp>=1){H=BASE;W=Math.round(BASE*asp);}else{W=BASE;H=Math.round(BASE/asp);}
@@ -2161,7 +2161,22 @@ function resize(){
   scale=Math.max(1,Math.round(r.width*dpr/W));
   cv.width=W*scale;cv.height=H*scale;ctx.imageSmoothingEnabled=false;
 }
-new ResizeObserver(resize).observe(cv);
+const ro=new ResizeObserver(()=>resize());ro.observe(cv);
+// 手機旋轉後畫布可能遺失內容（黑畫面）：偵測到就重建畫布、重畫地圖
+function rebuildCanvas(){
+  const n=cv.cloneNode(false);cv.replaceWith(n);ro.unobserve(cv);cv=n;ro.observe(cv);ctx=cv.getContext('2d');
+  resize();try{drawMap(mulberry32(777+curChap));}catch(e){}
+}
+function onRotate(){resize();setTimeout(resize,250);setTimeout(()=>{resize();checkCanvas(true);},700);}
+addEventListener('orientationchange',onRotate);
+if(window.visualViewport)visualViewport.addEventListener('resize',()=>setTimeout(resize,50));
+cv.addEventListener('contextlost',e=>e.preventDefault());
+let ccT=0;
+function checkCanvas(force){
+  const lost=(ctx.isContextLost&&ctx.isContextLost())||(mapC.getContext('2d').isContextLost&&mapC.getContext('2d').isContextLost());
+  if(lost||force&&canvasBlank()) rebuildCanvas();
+}
+function canvasBlank(){try{const d=ctx.getImageData(cv.width>>1,cv.height>>1,1,1).data;return d[3]===0||(d[0]+d[1]+d[2]===0&&curChap>=0&&!paused);}catch(e){return false;}}
 
 function drawSpr(s,x,y,face,flash,sq,alpha){
   const img=flash?s.white:s.c;
@@ -2780,6 +2795,7 @@ function frame(t){
   // 單一錯誤不讓整個遊戲停住
   try{if(!paused) update(dt);render();updateHUD();}catch(err){console.error(err);if(!frame.errT||performance.now()-frame.errT>10000){frame.errT=performance.now();}}
   if((miniT+=dt)>.1){miniT=0;drawMini();}
+  if((ccT+=dt)>1){ccT=0;checkCanvas(false);}
   if((achT+=dt)>1){achT=0;checkAch();}
   requestAnimationFrame(frame);
 }
