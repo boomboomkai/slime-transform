@@ -244,6 +244,21 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;image-rendering:pix
 .stage-grid button.cur{border-color:var(--slime);color:var(--slime);box-shadow:inset 0 0 0 1px var(--slime)}
 .stage-grid button.locked{color:var(--lock);border-style:dashed}
 .tr-btns .tbtn{border-top:0;margin-left:-2px;height:38px}
+.hasdot{position:relative}
+.hasdot::before{content:"";position:absolute;top:3px;right:3px;width:9px;height:9px;border-radius:50%;background:#ff2d45;box-shadow:0 0 0 2px #0d1020;animation:dotp 1s ease-in-out infinite}
+@keyframes dotp{50%{transform:scale(1.25)}}
+.rdot{position:absolute;top:4px;right:4px;width:9px;height:9px;border-radius:50%;background:#ff2d45;box-shadow:0 0 0 2px #0d1020}
+.rdot.inl{position:static;display:inline-block;margin-left:6px;vertical-align:1px}
+.eqcell{position:relative}
+.eqcell small.cp{color:var(--muted)!important;font-size:9.5px}
+.pwr{font-size:12px;color:var(--muted)}
+.pwr b{font-weight:400;color:#ffcf4a;font-size:14px}
+.pwr em{font-style:normal;margin-left:8px;font-size:12px}
+.pwr em.up{color:#7be08a}.pwr em.dn{color:#ff5d6c}
+.tpow{font-size:13px;color:var(--muted)}.tpow b{font-weight:400;color:#ffcf4a;font-size:17px}
+.autoeq{font-size:11px!important;padding:4px 8px!important;border-color:#ff2d45!important;color:#ffb0b8!important}
+.hpow{font-size:10px;color:#ffcf4a;line-height:1}
+@media (prefers-reduced-motion:reduce){.hasdot::before{animation:none}}
 .tbtn{min-width:48px;height:40px;padding:0 10px;background:var(--glass);border:2px solid var(--line);font-size:13px;display:flex;gap:6px;align-items:center;justify-content:center}
 .tbtn:active{transform:translateY(1px)}
 .tbtn#soundBtn{min-width:40px;font-size:16px}
@@ -368,6 +383,7 @@ canvas#game{position:absolute;inset:0;width:100%;height:100%;image-rendering:pix
         <div class="bar"><i id="hpBar"></i><div class="sh" id="shBar"></div></div>
         <div class="bar mp"><i id="mpBar"></i></div>
         <div class="bar xp"><i id="xpBar"></i></div>
+        <div class="hpow" id="hudPow">戰力 0</div>
       </div>
     </div>
     <div class="tracker">
@@ -1091,7 +1107,21 @@ function genItem(ilvl,rar,slot){
 }
 const invGet=uid=>S.inv.find(i=>i.uid===uid);
 const itemEff=it=>itemEffFull(it);
-const itemScore=it=>{const e=itemEff(it),w={atk:3,hp:2,mp:1,def:3,spd:1.5,crit:2.5,life:4,gold:.8,mpreg:.6,cd:3};let s=0;for(const k in e)s+=e[k]*(w[k]||1);return s+(it.leg?.3:0);};
+// ====== 戰力 ======
+const PW={atk:3,hp:2,mp:1,def:3,spd:1.5,crit:2.5,life:4,gold:.8,mpreg:.6,cd:3};
+function itemPower(it){const e=itemEffFull(it);let s=0;for(const k in e)s+=e[k]*(PW[k]||1);return Math.round(s*1000+(it.leg?150:0)+it.ilvl*4);}
+const gearOf=sl=>S.gear[sl]&&invGet(S.gear[sl]);
+// 某部位有沒有「穿得上、而且戰力比目前高」的裝備
+function upgradeFor(sl){const cur=gearOf(sl),cp=cur?itemPower(cur):0;let best=null,bp=cp;
+  for(const it of S.inv){if(it.slot!==sl||S.lv<it.ilvl||it===cur)continue;const p=itemPower(it);if(p>bp){bp=p;best=it;}}return best;}
+const upgradeSlots=()=>Object.keys(SLOT_NAME).filter(sl=>upgradeFor(sl));
+function totalPower(){
+  let gp=0;for(const sl in S.gear){const it=gearOf(sl);if(it)gp+=itemPower(it);}
+  const up=Object.keys(UPG).reduce((a,k)=>a+(S.up[k]||0)*40,0);
+  return Math.round(S.lv*60+gp+up);
+}
+const itemScore=it=>itemPower(it)/1000;
+const itemScoreOld=it=>{const e=itemEff(it),w={atk:3,hp:2,mp:1,def:3,spd:1.5,crit:2.5,life:4,gold:.8,mpreg:.6,cd:3};let s=0;for(const k in e)s+=e[k]*(w[k]||1);return s+(it.leg?.3:0);};
 const sellPrice=it=>Math.round((5+it.ilvl*3)*[1,2.5,6,15,50][it.rar]*(1+(it.plus||0)*.3));
 const pct=v=>{const p=v*100;return (p<10&&Math.abs(p-Math.round(p))>.05?p.toFixed(1):Math.round(p))+'%';};
 const effText=e=>Object.entries(e).map(([k,v])=>EFF_TXT[k]+pct(v)).join('・');
@@ -1109,13 +1139,16 @@ const hasLeg=id=>bonus().legs.has(id);
 function addItem(it,announce){
   if(S.inv.length>=100){const g=sellPrice(it);S.gold+=g;toast(`背包已滿，${it.name} 自動賣出 +${g} G`,'bad');return;}
   S.inv.push(it);S.found=S.found||{};S.found[it.rar]=(S.found[it.rar]||0)+1;
-  if(announce){toast(`獲得【${RAR[it.rar].n}】${it.name}（Lv${it.ilvl}）`,it.rar>=3?'':'blue');if(it.rar>=3)AU.sfx.learn(true);else AU.sfx.pickup();}
+  if(announce){toast(`獲得【${RAR[it.rar].n}】${it.name}（Lv${it.ilvl}・戰力 ${itemPower(it)}）`,it.rar>=3?'':'blue');if(it.rar>=3)AU.sfx.learn(true);else AU.sfx.pickup();
+    const cur=gearOf(it.slot);if(S.lv>=it.ilvl&&(!cur||itemPower(it)>itemPower(cur)))setTimeout(()=>toast(`${SLOT_NAME[it.slot]}有戰力更高的裝備可以換上！`,''),400);}
+  hudCache.upd=null;
 }
 function itemCard(it,opts={}){
   const R=RAR[it.rar],can=S.lv>=it.ilvl,eq=Object.values(S.gear).includes(it.uid);
-  const cur=S.gear[it.slot]&&invGet(S.gear[it.slot]),better=!eq&&(!cur||itemScore(it)>itemScore(cur)+1e-6);
+  const cur=gearOf(it.slot),pw=itemPower(it),diff=eq?0:pw-(cur?itemPower(cur):0),better=!eq&&diff>0;
   return `<div class="shop-row item ${eq?'eq':''}" style="--rc:${R.c}"><div class="iic"><img src="${ICON[itemIconId(it)]}" alt=""></div><div class="d">
-    <span class="iname" style="color:${R.c}">${it.plus?`<em class="plus">+${it.plus}</em> `:''}${it.name}${eq?'　<small style="color:var(--slime)">裝備中</small>':better&&can?'　<small style="color:#7be08a">▲ 更好</small>':''}</span>
+    <span class="iname" style="color:${R.c}">${it.plus?`<em class="plus">+${it.plus}</em> `:''}${it.name}${eq?'　<small style="color:var(--slime)">裝備中</small>':''}</span>
+    <span class="pwr">戰力 <b>${pw.toLocaleString()}</b>${eq?'':diff>0?`<em class="up">▲ ${diff.toLocaleString()}</em>`:diff<0?`<em class="dn">▼ ${(-diff).toLocaleString()}</em>`:''}${better&&can?'<i class="rdot inl"></i>':''}</span>
     <small>【${R.n}】${SLOT_NAME[it.slot]}・Lv ${it.ilvl}${can?'':`・<span style="color:var(--hp)">需要 Lv ${it.ilvl}</span>`}</small>
     <small class="ib">${effText(Object.fromEntries(Object.entries(it.base).map(([k,v])=>[k,v*(1+.1*(it.plus||0))])))}${it.plus?`<span style="color:var(--muted)">（強化 +${it.plus*10}%）</span>`:''}</small>
     ${it.aff.map(a=>`<small class="ia" style="color:${R.c}">◆ ${EFF_TXT[a.k]}${pct(a.v)}</small>`).join('')}
@@ -1159,6 +1192,7 @@ const GEM_ICON={};for(const g in GEMS)GEM_ICON[g]=gemIcon(g);
 const GEM_SPR={};for(const g in GEMS){const i=new Image();i.src=GEM_ICON[g];GEM_SPR[g]=i;}
 const STONE_ROWS=["...kkkk...","..kllssk..",".klsssssk.","ksssssssdk","kssssssddk",".ksssdddk.","..kkkkkk.."];
 ICON_DEF.stone=[STONE_ROWS,{l:'#e8f0ff',s:'#9aa8c8',d:'#5a6680'}];
+{const sp=makeSprite(STONE_ROWS,Object.assign({},IC_BASE,{l:'#e8f0ff',s:'#9aa8c8',d:'#5a6680'}));ICON_SPR.stone=sp;ICON.stone=sp.c.toDataURL();ICON_B.stone=sp.black.toDataURL();}
 function forgeView(it){
   const R=RAR[it.rar],p=it.plus||0,cost=plusCost(it),rate=plusRate(p),max=p>=MAX_PLUS;
   const ok=!max&&S.gold>=cost.gold&&S.mats.stone>=cost.stone;
@@ -1693,7 +1727,7 @@ function useItem(kind){ // kind: 'hp' | 'mp'
 function gainXp(n){
   S.xp+=n; let up=false;
   while(S.xp>=xpNeed(S.lv)){S.xp-=xpNeed(S.lv);S.lv++;up=true;}
-  if(up){AU.sfx.levelUp();P.hp=stats().maxhp;P.mp=stats().maxmp;toast(`升級！現在是 Lv ${S.lv}`,'blue');burst(P.x,P.y-6,'#7be08a',16);}
+  if(up){hudCache.upd=null;AU.sfx.levelUp();P.hp=stats().maxhp;P.mp=stats().maxmp;toast(`升級！現在是 Lv ${S.lv}`,'blue');burst(P.x,P.y-6,'#7be08a',16);}
 }
 function heal(n){const mx=stats().maxhp;const h=Math.min(mx-P.hp,Math.round(n));if(h>0){P.hp+=h;floats.push({x:P.x,y:P.y-16,text:'+'+h,color:'#7be08a',life:.7});}}
 function hurtPlayer(d){
@@ -2171,7 +2205,7 @@ function render(){
       ctx.fillStyle='#000';ctx.fillRect(x-7,y-11,14,14);ctx.fillStyle=rc;ctx.fillRect(x-6,y-10,12,12);ctx.fillStyle='#161a2f';ctx.fillRect(x-5,y-9,10,10);
       const sp=ICON_SPR[itemIconId(it)];if(sp)ctx.drawImage(sp.c,0,0,sp.w,sp.h,x-5,y-9,10,10);}
     else if(q.type==='gem'){const g=q.gem.split(':')[0];ctx.fillStyle=GEMS[g].c;ctx.globalAlpha=.3+.2*Math.sin(time*5);ctx.fillRect(x-5,y-12,11,11);ctx.globalAlpha=1;if(GEM_SPR[g].complete)ctx.drawImage(GEM_SPR[g],x-5,y-11);}
-    else{const sp=ICON_SPR[q.type];ctx.drawImage(sp.c,x-6,y-10);}
+    else{const sp=ICON_SPR[q.type];if(sp)ctx.drawImage(sp.c,x-6,y-10);}
   }
   for(const pt of portals){ // 傳送門
     const px=pt.x*T+T/2,py=pt.y*T+T/2;if(px<cx-40||px>cx+W+40||py<cy-40||py>cy+H+40)continue;
@@ -2298,6 +2332,12 @@ function updateHUD(){
   if(canSum)set('sumTxt','text',`召喚 BOSS ${zz}-${curStage(zz)}`);
   if(!!bsv!==hudCache.boss){hudCache.boss=!!bsv;$('bossBar').hidden=!bsv;}
   if(bsv){set('bbName','text',`${bsv.name}　${zz}-${bsv.stage}`);set('bbHp','width',Math.max(0,bsv.hp/bsv.maxhp*100).toFixed(1)+'%');}
+  // 有更好的裝備：裝備按鈕、選單分頁顯示紅點
+  if((hudCache.updT=(hudCache.updT||0)+1)%30===0||hudCache.upd==null){
+    const has=upgradeSlots().length>0;
+    if(has!==hudCache.upd){hudCache.upd=has;for(const el of [$('eqBtn'),$('menuBtn'),document.querySelector('[data-tab="equip"]'),document.querySelector('[data-tab="inv"]')])el&&el.classList.toggle('hasdot',has);}
+    set('hudPow','text','戰力 '+totalPower().toLocaleString());
+  }
   // 變身鍵提示
   const canTf=ORDER.some(x=>kills(x)>=SP[x].need&&!S.seenTf?.[x]);
   if(hudCache.tf!==canTf){hudCache.tf=canTf;$('tfBtn').classList.toggle('ready',canTf);}
@@ -2485,12 +2525,12 @@ $('replayTut').addEventListener('click',()=>startTut());
 // ---- 角色裝備介面 ----
 let eqSlot='weapon';
 const EQ_LEFT=['helm','shoulder','armor','gloves','belt','legs'],EQ_RIGHT=['weapon','cape','boots','ring','neck','earring'];
-function eqCell(k){const it=S.gear[k]&&invGet(S.gear[k]);return `<button class="eqcell ${k===eqSlot?'sel':''} ${it?'has':''}" data-eslot="${k}" style="${it?'--rc:'+RAR[it.rar].c:''}"><img src="${ICON[it?itemIconId(it):SLOT_ICON[k]]}" alt=""><span class="t"><b>${SLOT_NAME[k]}</b><small style="${it?'color:'+RAR[it.rar].c:''}">${it?it.name+' Lv'+it.ilvl:'未裝備'}</small></span></button>`;}
+function eqCell(k){const it=S.gear[k]&&invGet(S.gear[k]),up=upgradeFor(k);return `<button class="eqcell ${k===eqSlot?'sel':''} ${it?'has':''}" data-eslot="${k}" style="${it?'--rc:'+RAR[it.rar].c:''}"><img src="${ICON[it?itemIconId(it):SLOT_ICON[k]]}" alt=""><span class="t"><b>${SLOT_NAME[k]}</b><small style="${it?'color:'+RAR[it.rar].c:''}">${it?it.name+' Lv'+it.ilvl:'未裝備'}</small>${it?`<small class="cp">戰力 ${itemPower(it).toLocaleString()}</small>`:''}</span>${up?'<i class="rdot"></i>':''}</button>`;}
 function renderEquip(){
   const st=stats(),B=bonus(),f=S.form==='slime'?'slime':S.form;
   if(forgeUid&&!invGet(forgeUid))forgeUid=null;
   $('eqDoll').innerHTML=`<div class="eqcol">${EQ_LEFT.map(eqCell).join('')}</div>
-    <div class="eqmid"><img src="${iconURL[f]}" alt=""><b>${S.form==='slime'?'藍色小史萊姆':SP[S.form].name+'形態'}</b><small>Lv ${S.lv}</small>
+    <div class="eqmid"><img src="${iconURL[f]}" alt=""><b>${S.form==='slime'?'藍色小史萊姆':SP[S.form].name+'形態'}</b><small>Lv ${S.lv}</small><div class="tpow">戰力 <b>${totalPower().toLocaleString()}</b></div>${upgradeSlots().length?`<button class="x autoeq" data-autoeq="1">一鍵換上最強裝備</button>`:''}
       <ul class="eqstats">
         <li><span>最大 HP</span><b>${st.maxhp}</b></li><li><span>最大 MP</span><b>${st.maxmp}</b></li>
         <li><span>攻擊力</span><b>${Math.round(st.atk)}</b></li><li><span>減傷</span><b>${Math.round(st.def*100)}%</b></li>
@@ -2512,10 +2552,11 @@ function renderEquip(){
   h+=`<button class="x" id="eqShop" style="align-self:flex-start">到商店買${SLOT_NAME[eqSlot]}</button>`;
   $('eqList').innerHTML=h;
 }
-function gearChanged(fn){const a=stats();fn();invalidate();const b=stats();P.hp=Math.min(b.maxhp,P.hp*b.maxhp/a.maxhp);P.mp=Math.min(b.maxmp,P.mp*b.maxmp/a.maxmp);save();}
+function gearChanged(fn){hudCache.upd=null;const a=stats();fn();invalidate();const b=stats();P.hp=Math.min(b.maxhp,P.hp*b.maxhp/a.maxhp);P.mp=Math.min(b.maxmp,P.mp*b.maxmp/a.maxmp);save();}
 $('tab-equip').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   if(b.dataset.eslot){eqSlot=b.dataset.eslot;forgeUid=null;showGems=false;AU.sfx.click();}
+  else if(b.dataset.autoeq){const n=upgradeSlots();gearChanged(()=>{for(const sl of n)S.gear[sl]=upgradeFor(sl).uid;});AU.sfx.levelUp();toast(`換上 ${n.length} 件更強的裝備，戰力 ${totalPower().toLocaleString()}`,'');hudCache.upd=null;}
   else if(b.dataset.forge){forgeUid=b.dataset.forge;forgeSock=null;AU.sfx.click();}
   else if(b.dataset.fback){forgeUid=null;showGems=false;AU.sfx.click();}
   else if(b.dataset.gembag){showGems=true;AU.sfx.click();}
@@ -2736,7 +2777,8 @@ function bindReset(){
 let last=0,started=false,achT=0;
 function frame(t){
   const dt=Math.min(.05,(t-last)/1000||0);last=t;
-  if(!paused) update(dt);render();updateHUD();
+  // 單一錯誤不讓整個遊戲停住
+  try{if(!paused) update(dt);render();updateHUD();}catch(err){console.error(err);if(!frame.errT||performance.now()-frame.errT>10000){frame.errT=performance.now();}}
   if((miniT+=dt)>.1){miniT=0;drawMini();}
   if((achT+=dt)>1){achT=0;checkAch();}
   requestAnimationFrame(frame);
